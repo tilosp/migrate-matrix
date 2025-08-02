@@ -1,5 +1,5 @@
 # migrate-matrix
 A tool to migrate Matrix accounts between servers
 ```
-cargo run
+cargo install migrate-matrix
 ```
