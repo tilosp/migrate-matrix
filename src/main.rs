@@ -24,11 +24,15 @@ use matrix_sdk::{
         },
         RoomId,
     },
-    Client, OwnedServerName, Room, RoomState,
+    Client, Error, OwnedServerName, Room, RoomState,
 };
 use rand::distributions::{Alphanumeric, DistString};
 use tempfile::tempdir;
-use tokio::{select, signal::ctrl_c, time::timeout};
+use tokio::{
+    select,
+    signal::ctrl_c,
+    time::{self, timeout},
+};
 use tokio_stream::StreamExt;
 
 const DEVICE_NAME: &str = "migrate-matrix";
@@ -345,12 +349,21 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
         let client = client.clone();
         let user_id = user_id.to_owned();
         tokio::spawn(async move {
-            match client
-                .sync(SyncSettings::default().timeout(SYNC_TIMEOUT))
-                .await
-            {
-                Ok(_) => {}
-                Err(e) => println!("Error during sync for {user_id}: {e:?}"),
+            loop {
+                match client
+                    .sync(SyncSettings::default().timeout(SYNC_TIMEOUT))
+                    .await
+                {
+                    Ok(_) => break,
+                    Err(Error::Http(e)) => {
+                        println!("HTTP error during sync for {user_id}: {e:?}. Waiting 5 seconds.");
+                        time::sleep(Duration::from_secs(5)).await;
+                    }
+                    Err(e) => {
+                        println!("Error during sync for {user_id}: {e:?}. Stopping sync.");
+                        break;
+                    }
+                }
             }
         });
     }
