@@ -254,15 +254,19 @@ async fn ensure_joined(
         .observe_room_events::<SyncStateEvent<RoomMemberEventContent>, Room>(room_id)
         .subscribe()
         .filter(|(e, _)| e.state_key() == new_user); // only listen for own invite
-    let (wait_for_invite, invite_other_server) = tokio::join!(
-        timeout(Duration::from_secs(120), subscriber.next()),
-        old_room.invite_user_by_id(new_user)
-    );
-    invite_other_server.context("try invite since join failed")?;
 
-    let (event, new_room) = wait_for_invite
-        .map_err(|_| anyhow!("did not get invite within 5 seconds"))?
-        .ok_or_else(|| anyhow!("missing event"))?;
+    let (event, new_room) = select! {
+       err = old_room.invite_user_by_id(new_user) => {
+            err.context("try invite since join failed")?;
+            timeout(Duration::from_secs(30), subscriber.next())
+                .await
+                .map_err(|_| anyhow!("did not get invite within 30 seconds"))?
+                .ok_or_else(|| anyhow!("missing event"))?
+        },
+        event = subscriber.next() => {
+            event.ok_or_else(|| anyhow!("missing event"))?
+        }
+    };
 
     let old_user = old_account
         .user_id()
