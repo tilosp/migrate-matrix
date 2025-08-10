@@ -340,8 +340,19 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
 
     do_verification(&identity).await?;
 
-    println!("Waiting for recovery for {user_id}");
-    wait_for_recovery(&encryption.recovery()).await?;
+    let recovery = encryption.recovery();
+    let recovery_key = Password::new()
+        .with_prompt(format!("Recovery key"))
+        .interact()?;
+
+    recovery.recover(recovery_key.trim()).await?;
+
+    match recovery.state() {
+        RecoveryState::Enabled => println!("Successfully recovered all the E2EE secrets."),
+        RecoveryState::Disabled => println!("Error recovering, recovery is disabled."),
+        RecoveryState::Incomplete => println!("Couldn't recover all E2EE secrets."),
+        _ => bail!("We should know our recovery state by now"),
+    }
 
     let state = encryption
         .cross_signing_status()
