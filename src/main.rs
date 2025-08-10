@@ -341,7 +341,7 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
     do_verification(&identity).await?;
 
     let recovery = encryption.recovery();
-    let recovery_key = Password::new()
+    let recovery_key = Input::<String>::new()
         .with_prompt(format!("Recovery key"))
         .interact()?;
 
