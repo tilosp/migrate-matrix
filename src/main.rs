@@ -31,6 +31,7 @@ use tokio::{select, signal::ctrl_c, time::timeout};
 use tokio_stream::StreamExt;
 
 const DEVICE_NAME: &str = "migrate-matrix";
+const SYNC_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -330,14 +331,23 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
 
     println!("Login done, syncing user {user_id}");
     client
-        .sync_once(SyncSettings::default().timeout(Duration::from_secs(120)))
+        .sync_once(SyncSettings::default().timeout(SYNC_TIMEOUT))
         .await?;
 
     println!("initial sync done for {user_id}");
 
     {
         let client = client.clone();
-        tokio::spawn(async move { client.sync(SyncSettings::default()).await });
+        let user_id = user_id.to_owned();
+        tokio::spawn(async move {
+            match client
+                .sync(SyncSettings::default().timeout(SYNC_TIMEOUT))
+                .await
+            {
+                Ok(_) => {}
+                Err(e) => println!("Error during sync for {user_id}: {e:?}"),
+            }
+        });
     }
 
     let encryption = client.encryption();
