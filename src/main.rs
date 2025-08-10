@@ -259,9 +259,9 @@ async fn ensure_joined(
         .await
         .context("try invite since join failed")?;
 
-    let (event, new_room) = timeout(Duration::from_secs(30), subscriber.next())
+    let (event, new_room) = timeout(Duration::from_secs(5), subscriber.next())
         .await
-        .map_err(|_| anyhow!("did not get invite within 30 seconds"))?
+        .map_err(|_| anyhow!("did not get invite within 5 seconds"))?
         .ok_or_else(|| anyhow!("missing event"))?;
 
     let old_user = old_account
