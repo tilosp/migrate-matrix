@@ -167,13 +167,15 @@ async fn migrate_room(
         .ok_or_else(|| anyhow!("missing user id"))?;
 
     let power_level = old_room.power_levels().await?.for_user(old_user);
-    let _ = old_room // try to set power level, ignore if it if we donst
+    let power_level_update = old_room
         .update_power_levels(vec![(new_user, power_level)])
         .await;
 
     migrate_keys(old_account.encryption(), new_account.encryption(), room_id).await?;
 
-    old_room.leave().await?;
+    if power_level_update.is_ok() {
+        old_room.leave().await?;
+    }
 
     new_room.set_is_direct(direct).await?;
     if direct {
@@ -251,15 +253,14 @@ async fn ensure_joined(
         .observe_room_events::<SyncStateEvent<RoomMemberEventContent>, Room>(room_id)
         .subscribe()
         .filter(|(e, _)| e.state_key() == new_user); // only listen for own invite
+    let (wait_for_invite, invite_other_server) = tokio::join!(
+        timeout(Duration::from_secs(120), subscriber.next()),
+        old_room.invite_user_by_id(new_user)
+    );
+    invite_other_server.context("try invite since join failed")?;
 
-    old_room
-        .invite_user_by_id(new_user)
-        .await
-        .context("try invite since join failed")?;
-
-    let (event, new_room) = timeout(Duration::from_secs(30), subscriber.next())
-        .await
-        .map_err(|_| anyhow!("did not get invite within 30 seconds"))?
+    let (event, new_room) = wait_for_invite
+        .map_err(|_| anyhow!("did not get invite within 5 seconds"))?
         .ok_or_else(|| anyhow!("missing event"))?;
 
     let old_user = old_account
@@ -328,7 +329,9 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
     let user_id = client.user_id().ok_or_else(|| anyhow!("missing user id"))?;
 
     println!("Login done, syncing user {user_id}");
-    client.sync_once(SyncSettings::default()).await?;
+    client
+        .sync_once(SyncSettings::default().timeout(Duration::from_secs(120)))
+        .await?;
 
     println!("initial sync done for {user_id}");
 
@@ -346,20 +349,32 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
 
     do_verification(&identity).await?;
 
-    println!("Waiting for recovery for {user_id}");
-    wait_for_recovery(&encryption.recovery()).await?;
+    /*
+        let recovery = encryption.recovery();
+        let recovery_key = Input::<String>::new()
+            .with_prompt(format!("Recovery key"))
+            .interact()?;
 
-    let state = encryption
-        .cross_signing_status()
-        .await
-        .ok_or_else(|| anyhow!("missing status"))?;
-    ensure!(state.is_complete());
+        recovery.recover(recovery_key.trim()).await?;
 
-    let backups = encryption.backups();
-    backups.wait_for_steady_state().await?;
-    ensure!(backups.are_enabled().await);
-    ensure!(backups.state() == BackupState::Enabled);
+        match recovery.state() {
+            RecoveryState::Enabled => println!("Successfully recovered all the E2EE secrets."),
+            RecoveryState::Disabled => println!("Error recovering, recovery is disabled."),
+            RecoveryState::Incomplete => println!("Couldn't recover all E2EE secrets."),
+            _ => bail!("We should know our recovery state by now"),
+        }
 
+        let state = encryption
+            .cross_signing_status()
+            .await
+            .ok_or_else(|| anyhow!("missing status"))?;
+        ensure!(state.is_complete());
+
+        let backups = encryption.backups();
+        backups.wait_for_steady_state().await?;
+        ensure!(backups.are_enabled().await);
+        ensure!(backups.state() == BackupState::Enabled);
+    */
     println!("Login done for {user_id}");
 
     Ok(())
@@ -370,7 +385,7 @@ async fn do_verification(identity: &UserIdentity) -> anyhow::Result<()> {
         .request_verification_with_methods(vec![VerificationMethod::SasV1])
         .await?;
 
-    println!("Waiting for accept");
+    println!("Waiting for accept. Don't start emoji flow on the other client!");
 
     let change = verification
         .changes()
@@ -414,7 +429,7 @@ async fn do_verification(identity: &UserIdentity) -> anyhow::Result<()> {
     }
     .ok_or_else(|| anyhow!("emojis missing"))?;
 
-    println!("Emojis: {}", emoji.emojis.map(|e| e.symbol).concat());
+    println!("Emojis: {}", emoji.emojis.map(|e| e.description).join(", "));
 
     let confirmation = Confirm::new().with_prompt("Do they match?").interact()?;
     if confirmation {
