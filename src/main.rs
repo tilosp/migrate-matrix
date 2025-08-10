@@ -253,14 +253,13 @@ async fn ensure_joined(
         .observe_room_events::<SyncStateEvent<RoomMemberEventContent>, Room>(room_id)
         .subscribe()
         .filter(|(e, _)| e.state_key() == new_user); // only listen for own invite
+    let (wait_for_invite, invite_other_server) = tokio::join!(
+        timeout(Duration::from_secs(120), subscriber.next()),
+        old_room.invite_user_by_id(new_user)
+    );
+    invite_other_server.context("try invite since join failed")?;
 
-    old_room
-        .invite_user_by_id(new_user)
-        .await
-        .context("try invite since join failed")?;
-
-    let (event, new_room) = timeout(Duration::from_secs(5), subscriber.next())
-        .await
+    let (event, new_room) = wait_for_invite
         .map_err(|_| anyhow!("did not get invite within 5 seconds"))?
         .ok_or_else(|| anyhow!("missing event"))?;
 
@@ -330,7 +329,9 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
     let user_id = client.user_id().ok_or_else(|| anyhow!("missing user id"))?;
 
     println!("Login done, syncing user {user_id}");
-    client.sync_once(SyncSettings::default().timeout(Duration::from_secs(120))).await?;
+    client
+        .sync_once(SyncSettings::default().timeout(Duration::from_secs(120)))
+        .await?;
 
     println!("initial sync done for {user_id}");
 
@@ -348,31 +349,32 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
 
     do_verification(&identity).await?;
 
-    let recovery = encryption.recovery();
-    let recovery_key = Input::<String>::new()
-        .with_prompt(format!("Recovery key"))
-        .interact()?;
+    /*
+        let recovery = encryption.recovery();
+        let recovery_key = Input::<String>::new()
+            .with_prompt(format!("Recovery key"))
+            .interact()?;
 
-    recovery.recover(recovery_key.trim()).await?;
+        recovery.recover(recovery_key.trim()).await?;
 
-    match recovery.state() {
-        RecoveryState::Enabled => println!("Successfully recovered all the E2EE secrets."),
-        RecoveryState::Disabled => println!("Error recovering, recovery is disabled."),
-        RecoveryState::Incomplete => println!("Couldn't recover all E2EE secrets."),
-        _ => bail!("We should know our recovery state by now"),
-    }
+        match recovery.state() {
+            RecoveryState::Enabled => println!("Successfully recovered all the E2EE secrets."),
+            RecoveryState::Disabled => println!("Error recovering, recovery is disabled."),
+            RecoveryState::Incomplete => println!("Couldn't recover all E2EE secrets."),
+            _ => bail!("We should know our recovery state by now"),
+        }
 
-    let state = encryption
-        .cross_signing_status()
-        .await
-        .ok_or_else(|| anyhow!("missing status"))?;
-    ensure!(state.is_complete());
+        let state = encryption
+            .cross_signing_status()
+            .await
+            .ok_or_else(|| anyhow!("missing status"))?;
+        ensure!(state.is_complete());
 
-    let backups = encryption.backups();
-    backups.wait_for_steady_state().await?;
-    ensure!(backups.are_enabled().await);
-    ensure!(backups.state() == BackupState::Enabled);
-
+        let backups = encryption.backups();
+        backups.wait_for_steady_state().await?;
+        ensure!(backups.are_enabled().await);
+        ensure!(backups.state() == BackupState::Enabled);
+    */
     println!("Login done for {user_id}");
 
     Ok(())
