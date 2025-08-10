@@ -364,7 +364,7 @@ async fn do_verification(identity: &UserIdentity) -> anyhow::Result<()> {
         .request_verification_with_methods(vec![VerificationMethod::SasV1])
         .await?;
 
-    println!("Waiting for accept");
+    println!("Waiting for accept. Don't start emoji flow on the other client!");
 
     let change = verification
         .changes()
