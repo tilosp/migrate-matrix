@@ -419,7 +419,7 @@ async fn do_verification(identity: &UserIdentity) -> anyhow::Result<()> {
     }
     .ok_or_else(|| anyhow!("emojis missing"))?;
 
-    println!("Emojis: {}", emoji.emojis.map(|e| e.symbol).concat());
+    println!("Emojis: {}", emoji.emojis.map(|e| e.description).join(", "));
 
     let confirmation = Confirm::new().with_prompt("Do they match?").interact()?;
     if confirmation {
