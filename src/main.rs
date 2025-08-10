@@ -167,13 +167,15 @@ async fn migrate_room(
         .ok_or_else(|| anyhow!("missing user id"))?;
 
     let power_level = old_room.power_levels().await?.for_user(old_user);
-    let _ = old_room // try to set power level, ignore if it if we donst
+    let power_level_update = old_room
         .update_power_levels(vec![(new_user, power_level)])
         .await;
 
     migrate_keys(old_account.encryption(), new_account.encryption(), room_id).await?;
 
-    old_room.leave().await?;
+    if power_level_update.is_ok() {
+        old_room.leave().await?;
+    }
 
     new_room.set_is_direct(direct).await?;
 
