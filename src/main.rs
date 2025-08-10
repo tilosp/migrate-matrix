@@ -322,7 +322,7 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
     let user_id = client.user_id().ok_or_else(|| anyhow!("missing user id"))?;
 
     println!("Login done, syncing user {user_id}");
-    client.sync_once(SyncSettings::default()).await?;
+    client.sync_once(SyncSettings::default().timeout(Duration::from_secs(120))).await?;
 
     println!("initial sync done for {user_id}");
 
