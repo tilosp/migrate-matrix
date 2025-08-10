@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context};
 use dialoguer::{Confirm, Editor, Input, Password};
+use indicatif::ProgressIterator;
 use matrix_sdk::{
     config::SyncSettings,
     crypto::SasState,
@@ -126,7 +127,7 @@ async fn account_main(
         println!("Remaining rooms: {prev}");
 
         let mut errors = vec![];
-        for room in rooms {
+        for room in rooms.into_iter().progress() {
             let room_id = room.room_id();
             if let Err(e) = migrate_room(old_account, new_account, &room, convert_to_dm_msg).await {
                 println!("Error joining room {room_id}: {e:?}");
