@@ -176,14 +176,6 @@ async fn migrate_room(
     old_room.leave().await?;
 
     new_room.set_is_direct(direct).await?;
-    if direct {
-        new_room
-            .send(
-                RoomMessageEventContent::text_plain(convert_to_dm_msg)
-                    .add_mentions(Mentions::new()),
-            )
-            .await?;
-    }
 
     Ok(())
 }
