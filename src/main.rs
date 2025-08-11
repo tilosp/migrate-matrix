@@ -261,8 +261,10 @@ async fn ensure_joined(
         .user_id()
         .ok_or_else(|| anyhow!("missing user id"))?;
 
-    let mut subscriber = new_account
-        .observe_room_events::<SyncStateEvent<RoomMemberEventContent>, Room>(room_id)
+    let observer =
+        new_account.observe_room_events::<SyncStateEvent<RoomMemberEventContent>, Room>(room_id);
+
+    let mut subscriber = observer
         .subscribe()
         .filter(|(e, _)| e.state_key() == new_user); // only listen for own invite
 
