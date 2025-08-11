@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, ensure, Context};
 use dialoguer::{Confirm, Editor, Input, Password};
+use indicatif::MultiProgress;
+use indicatif::ProgressBar;
 use indicatif::ProgressIterator;
 use matrix_sdk::{
     config::SyncSettings,
@@ -55,14 +57,17 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn first_logined_in(old_account: &Client) -> anyhow::Result<()> {
+    println!("starting first account login");
     let new_account = login("new")
         .await
         .with_context(|| "login into new account")?;
-
+    println!("first account logged in successfull");
+    println!("starting second account login");
     let result = select! {
         result = second_logined_in(&old_account, &new_account) => result,
         Ok(_) = ctrl_c() => Ok(()),
     };
+    println!("second account logged in successfull");
 
     let logout = new_account.matrix_auth().logout().await;
 
@@ -121,8 +126,10 @@ async fn account_main(
     convert_to_dm_msg: &str,
 ) -> anyhow::Result<()> {
     let mut rooms = old_account.joined_rooms();
+    let multiprogressbar1 = MultiProgress::new();
 
     loop {
+        let progressbar1 = multiprogressbar1.add(ProgressBar::new(rooms.len() as u64));
         let prev = rooms.len();
         if prev == 0 {
             // no more rooms
@@ -131,13 +138,18 @@ async fn account_main(
         println!("Remaining rooms: {prev}");
 
         let mut errors = vec![];
-        for room in rooms.into_iter().progress() {
+        for room in rooms.into_iter() {
+            let spinner1 = multiprogressbar1.add(ProgressBar::new_spinner());
+            spinner1.enable_steady_tick(Duration::from_millis(100));
             let room_id = room.room_id();
             if let Err(e) = migrate_room(old_account, new_account, &room, convert_to_dm_msg).await {
-                println!("Error joining room {room_id}: {e:?}");
+                progressbar1.println(format!("Error joining room {room_id}: {e:?}"));
                 errors.push((e, room));
             }
+            progressbar1.inc(1);
+            spinner1.finish();
         }
+        progressbar1.finish();
 
         if errors.len() == prev {
             // no more progress
@@ -182,11 +194,12 @@ async fn migrate_room(
     } else {
         true
     };
-
+    println!("Starting key migration");
     migrate_keys(old_account.encryption(), new_account.encryption(), room_id).await?;
-
+    println!("key migration ended");
     if leave {
         old_room.leave().await?;
+        println!("Old room left");
     }
 
     new_room.set_is_direct(direct).await?;
@@ -198,7 +211,7 @@ async fn migrate_room(
             )
             .await?;
     }
-
+    println!("room migrated");
     Ok(())
 }
 
@@ -212,15 +225,16 @@ async fn migrate_keys(
     let dir = tempdir()?;
     let path = dir.path().join("keys");
 
+    println!("Dowloading room keys for room");
     old_encryption
         .backups()
         .download_room_keys_for_room(room_id)
         .await?;
-
+    println!("Export room keys to temp");
     old_encryption
         .export_room_keys(path.clone(), &passphrase, |s| s.room_id() == room_id)
         .await?;
-
+    println!("Import old room keys");
     new_encryption.import_room_keys(path, &passphrase).await?;
 
     Ok(())
