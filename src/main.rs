@@ -17,7 +17,7 @@ use matrix_sdk::{
         events::{
             key::verification::VerificationMethod,
             room::{
-                member::{MembershipState, RoomMemberEventContent},
+                member::{MembershipState, SyncRoomMemberEvent},
                 message::RoomMessageEventContent,
             },
             Mentions, SyncStateEvent,
@@ -261,8 +261,7 @@ async fn ensure_joined(
         .user_id()
         .ok_or_else(|| anyhow!("missing user id"))?;
 
-    let observer =
-        new_account.observe_room_events::<SyncStateEvent<RoomMemberEventContent>, Room>(room_id);
+    let observer = new_account.observe_room_events::<SyncRoomMemberEvent, Room>(room_id);
 
     let mut subscriber = observer
         .subscribe()
