@@ -267,25 +267,35 @@ async fn ensure_joined(
         .subscribe()
         .filter(|(e, _)| e.state_key() == new_user); // only listen for own invite
 
-    let (event, new_room) = select! {
+    let new_room = select! {
        err = old_room.invite_user_by_id(new_user) => {
             err.context("try invite since join failed")?;
-            timeout(Duration::from_secs(30), subscriber.next())
-                .await
-                .map_err(|_| anyhow!("did not get invite within 30 seconds"))?
-                .ok_or_else(|| anyhow!("missing event"))?
+            match timeout(Duration::from_secs(10), subscriber.next()).await {
+                Ok(r) => {
+                    let (event, new_room) = r.ok_or_else(|| anyhow!("missing event"))?;
+                    let old_user = old_account
+                        .user_id()
+                        .ok_or_else(|| anyhow!("missing user id"))?;
+
+                    ensure!(event.sender() == old_user);
+                    ensure!(event.membership() == &MembershipState::Invite);
+                    new_room
+                },
+                Err(_) => new_account.get_room(room_id).ok_or_else(|| anyhow!("timeout waiting for invite event"))?,
+            }
+
         },
         event = subscriber.next() => {
-            event.ok_or_else(|| anyhow!("missing event"))?
+            let (event, new_room) = event.ok_or_else(|| anyhow!("missing event"))?;
+            let old_user = old_account
+                .user_id()
+                .ok_or_else(|| anyhow!("missing user id"))?;
+
+            ensure!(event.sender() == old_user);
+            ensure!(event.membership() == &MembershipState::Invite);
+            new_room
         }
     };
-
-    let old_user = old_account
-        .user_id()
-        .ok_or_else(|| anyhow!("missing user id"))?;
-
-    ensure!(event.sender() == old_user);
-    ensure!(event.membership() == &MembershipState::Invite);
 
     new_room.join().await.context("try join after new invite")?;
     Ok(new_room)
