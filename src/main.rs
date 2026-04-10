@@ -408,6 +408,9 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
 
     do_verification(&identity).await?;
 
+    println!("Waiting for recovery for {user_id}");
+    wait_for_recovery(&encryption.recovery()).await?;
+
     /*
         let recovery = encryption.recovery();
         let recovery_key = Input::<String>::new()
@@ -422,18 +425,19 @@ async fn login_inner(client: &Client) -> anyhow::Result<()> {
             RecoveryState::Incomplete => println!("Couldn't recover all E2EE secrets."),
             _ => bail!("We should know our recovery state by now"),
         }
-
-        let state = encryption
-            .cross_signing_status()
-            .await
-            .ok_or_else(|| anyhow!("missing status"))?;
-        ensure!(state.is_complete());
-
-        let backups = encryption.backups();
-        backups.wait_for_steady_state().await?;
-        ensure!(backups.are_enabled().await);
-        ensure!(backups.state() == BackupState::Enabled);
     */
+
+    let state = encryption
+        .cross_signing_status()
+        .await
+        .ok_or_else(|| anyhow!("missing status"))?;
+    ensure!(state.is_complete());
+
+    let backups = encryption.backups();
+    backups.wait_for_steady_state().await?;
+    ensure!(backups.are_enabled().await);
+    ensure!(backups.state() == BackupState::Enabled);
+
     println!("Login done for {user_id}");
 
     Ok(())
