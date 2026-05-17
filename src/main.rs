@@ -42,9 +42,11 @@ const SYNC_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    println!("starting first account login");
     let old_account = login("old")
         .await
         .with_context(|| "login into old account")?;
+    println!("first account logged in successfull");
 
     let result = first_logined_in(&old_account).await;
 
@@ -57,17 +59,15 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn first_logined_in(old_account: &Client) -> anyhow::Result<()> {
-    println!("starting first account login");
+    println!("starting second account login");
     let new_account = login("new")
         .await
         .with_context(|| "login into new account")?;
-    println!("first account logged in successfull");
-    println!("starting second account login");
+    println!("second account logged in successfull");
     let result = select! {
         result = second_logined_in(&old_account, &new_account) => result,
         Ok(_) = ctrl_c() => Ok(()),
     };
-    println!("second account logged in successfull");
 
     let logout = new_account.matrix_auth().logout().await;
 
